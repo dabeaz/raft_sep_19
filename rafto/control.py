@@ -6,6 +6,7 @@ import threading
 import time
 import random
 import os
+import logging
 
 from .raftcore import Message, RaftMachine
 from . import config
@@ -21,13 +22,13 @@ class RaftControl:
         self.events = Queue()
         self._alive = False
 
-        # Persistent log
-        self._restore_log()
-        self._plog = open(f'{self.address}-plog.p', 'ab')
-        self._plog.seek(0, os.SEEK_END)
-        
         # Debugging/Testing.
         self.paused = False
+        self.debug_log = logging.getLogger(f'control.{self.address}')
+
+        # Persistent log
+        self._plog = None
+
 
     # --- Functions to be called by the underlying state machine
     
@@ -77,7 +78,7 @@ class RaftControl:
                         break
         except IOError:
             pass
-        print(f"Restored {nentries} transactions")
+        self.debug_log.info(f"Restored {nentries} transactions")
         
     # --- Runtime threads.  These manage the controller internal event queue.
     
@@ -113,7 +114,7 @@ class RaftControl:
         '''
         Event loop for the controller.
         '''
-        print(f"Controller {self.address} running")
+        self.debug_log.info(f"Controller {self.address} running")
         while True:
             evt, arg = self.events.get()
             if self.paused:
@@ -130,6 +131,11 @@ class RaftControl:
                 raise RuntimeError(f'Unknown event {evt}')
 
     def start(self):
+        # Restore state from persistent storage
+        self._restore_log()
+        self._plog = open(f'{self.address}-plog.p', 'ab')
+        self._plog.seek(0, os.SEEK_END)
+
         self.net.start()
         threading.Thread(target=self._receiver, daemon=True).start()
         threading.Thread(target=self._leader_heartbeat, daemon=True).start()
@@ -137,15 +143,18 @@ class RaftControl:
         threading.Thread(target=self._event_loop, daemon=True).start()
 
     def run_tcp_server(self, address, handler):
+        '''
+        Run a TCP server for the purpose of client interaction.   The
+        server executes a handler function, passing it (sock, controller)
+        as arguments.
+        '''
         def _server():
             from socket import socket, SOCK_STREAM, AF_INET, SOL_SOCKET, SO_REUSEADDR
-            # Run a TCP application server on a given address.
-            # On connection. Call handler
             sock = socket(AF_INET, SOCK_STREAM)
             sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, True)
             sock.bind(address)
             sock.listen(1)
-            print("TCP SERVER RUNNING", sock)
+            self.debug_log.info("TCP SERVER RUNNING %r", sock)
             while True:
                 client, addr = sock.accept()
                 threading.Thread(target=handler, args=(client, self), daemon=True).start()

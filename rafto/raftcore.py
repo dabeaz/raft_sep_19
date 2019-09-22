@@ -2,17 +2,14 @@
 #
 
 import logging
+import collections
 
 from .raftlog import RaftLog, LogEntry
 
-class RaftEntry:
-    '''
-    Special log entry type for Raft-internal operations. Entries of this type
-    do not get applied to the application state machine.
-    '''
-    def __init__(self, term, value):
-        self.term = term
-        self.value = value
+# Special log entry type for Raft-internal operations such as leader change,
+# reconfiguration, etc.
+
+RaftEntry = collections.namedtuple('RaftEntry', ['term', 'value'])
         
 # --- Messages exchanged between the Raft servers
 
@@ -124,7 +121,9 @@ class RaftMachine:
         self.state = 'LEADER'
         self.next_index = [ len(self.log) for n in range(self.control.numservers) ]
         self.match_index = [ -1 ] * len(self.next_index)
-        self.append_entries([None], EntryType=RaftEntry)  # Assert our dominance
+        # Assert the leader is in charge. Includes a raft-internal log entry
+        # to force commit of uncommitted log-entries that might exist on leader.
+        self.append_entries([f'Leader{self.control.address}'], EntryType=RaftEntry)
 
     def become_candidate(self):
         self.debug_log.info('Becoming Candidate')
@@ -152,7 +151,6 @@ class RaftMachine:
         '''
         if self.state != 'LEADER':
             return
-        
         self.control.leader_alive()
         entries = [ EntryType(self.current_term, v) for v in values ]
         args = (len(self.log),
