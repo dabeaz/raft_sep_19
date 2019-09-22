@@ -18,7 +18,6 @@ class AsyncRaftControl:
         self.quorum = (self.numservers // 2) + 1
         self.machine = RaftMachine(self, apply)
         self.events = curio.UniversalQueue()
-        self.outgoing = curio.UniversalQueue()
         self._alive = False
 
         # Persistent log
@@ -42,12 +41,7 @@ class AsyncRaftControl:
         Sends a message.  The message destination is assumed to be encoded in the
         message itself as a "dest" attribute.
         '''
-        self.outgoing.put(msg)
-
-    async def _sender(self):
-        while True:
-            msg = await self.outgoing.get()
-            await self.net.send(msg.dest, pickle.dumps(msg))
+        curio.AWAIT(self.net.send(msg.dest, pickle.dumps(msg)))
 
     def client_append_entries(self, values):
         '''
@@ -114,13 +108,13 @@ class AsyncRaftControl:
             if not self._alive:
                 await self.events.put(('timeout', None))
             
-    async def _event_loop(self):
+    def _event_loop(self):
         '''
         Event loop for the controller.
         '''
         print(f"ASYNC Controller {self.address} running")
         while True:
-            evt, arg = await self.events.get()
+            evt, arg = self.events.get()
             if self.paused:
                 continue
             if evt == 'heartbeat':
@@ -140,8 +134,7 @@ class AsyncRaftControl:
             await curio.spawn(self._receiver, daemon=True)
             await curio.spawn(self._leader_heartbeat, daemon=True)
             await curio.spawn(self._election_timeout, daemon=True)
-            await curio.spawn(self._sender, daemon=True)
-            await self._event_loop()
+            await (await curio.spawn_thread(self._event_loop)).join()
             
         threading.Thread(target=curio.run, args=(_run,), daemon=True).start()
  
