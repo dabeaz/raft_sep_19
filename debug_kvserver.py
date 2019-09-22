@@ -2,11 +2,16 @@
 import subprocess
 import time
 import atexit
+import os
 
 procs = [ None ] * 5
 def launch(n):
-    p = subprocess.Popen(['python', 'raft_kvserver.py', str(n)],                        
-                               creationflags=subprocess.CREATE_NEW_CONSOLE)
+    if os.name != 'posix':
+        p = subprocess.Popen(['python', 'raft_kvserver.py', str(n)],                        
+                             creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        p = subprocess.Popen(['python', 'raft_kvserver.py', str(n)])
+
     if procs[n]:
         procs[n].terminate
     procs[n] = p
