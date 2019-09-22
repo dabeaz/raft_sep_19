@@ -65,8 +65,8 @@ def main(argv):
     
     if len(argv) != 2:
         raise SystemExit("Usage: raft_kvstore.py serverN")
-    # control = rafto.make_server(int(argv[1]), apply_changes)
-    control = rafto.make_async_server(int(argv[1]), apply_changes)
+    control = rafto.make_server(int(argv[1]), apply_changes)
+    # control = rafto.make_async_server(int(argv[1]), apply_changes)
     control.run_tcp_server(rafto.config.APPSERVERS[int(argv[1])], handle_client)
     print("KV Server running on", rafto.config.APPSERVERS[int(argv[1])])
     while True:
